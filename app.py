@@ -1,5 +1,5 @@
 from flask import Flask, abort, jsonify, request
-from elasticsearch import Elasticsearch, exceptions
+from elasticsearch import AsyncElasticsearch, exceptions
 from dotenv import load_dotenv
 import os
 
@@ -13,17 +13,15 @@ def connect_to_elasticsearch():
         Returns the elasticsearch connection.
     """
     load_dotenv('config.env')
-    return Elasticsearch(
+    es = AsyncElasticsearch(
         cloud_id=os.getenv('ELASTIC_CLOUD_ID'),
         http_auth=(os.getenv('ELASTIC_USER'), os.getenv('ELASTIC_PASSWORD')),
         timeout=2000
     )
-
-es = connect_to_elasticsearch()
-print(es)
+    return es
 
 @app.route('/search/<query>', methods=['GET'])
-def search(query):
+async def search_async(query):
     """
         Sends an elasticsearch query which returns 50 results at most.
 
@@ -33,6 +31,7 @@ def search(query):
         If a 'city' parameter is given, the query will filter results
         based on this city.
     """
+    es = connect_to_elasticsearch()
     if request.args.get('city'):
         query = {
             "function_score": {
@@ -99,7 +98,7 @@ def search(query):
             }
         }
 
-    es_response = es.search(index='business', body={
+    es_response = await es.search(index='business', body={
         "size": 50,
         "query": query,
         "_source": [
@@ -121,14 +120,15 @@ def search(query):
     return response
 
 @app.route('/reviews/<business_id>', methods=['GET'])
-def get_reviews_by_business_id(business_id):
+async def get_reviews_by_business_id_async(business_id):
     """
         Fetchs all the reviews of the given business_id from elasticsearch.
 
         If the given business_id doesn't exist, 404 HTTP is returned.
     """
+    es = connect_to_elasticsearch()
     try:
-        es_response = es.get(index='business', id=business_id, _source_includes=['reviews'])
+        es_response = await es.get(index='business', id=business_id, _source_includes=['reviews'])
     except exceptions.NotFoundError:
         abort(404)
 
